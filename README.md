@@ -1,5 +1,3 @@
-# materials
-
 ## Tentaive schedule (to be table-ified)
 
 ### Weeks 2-3
