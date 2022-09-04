@@ -1,18 +1,24 @@
 ## Tentaive schedule (to be table-ified)
 
-### Weeks 2-3
+### Weeks 2 - Map Reduce
 
-* Map Reduce
-* Hadoop
-* Spark
+* Readings
+  - [Data-Intensive Text Processing
+with MapReduce](http://lintool.github.io/MapReduceAlgorithms/ed1n.html) - Chp 2 & 3
 
-### Weeks 4
 
-* DuckDB
 
-### Weeks 5
+### Week 3 - Hadoop / Spark
 
-* NoSQL
+* 
+
+### Weeks 4 DuckDB
+
+* 
+
+### Weeks 5 - NoSQL
+
+* 
 
 
 ## Potential later topics (to be scheduled)
