@@ -4,7 +4,7 @@
 
 * Readings
   - [Data-Intensive Text Processing
-with MapReduce](http://lintool.github.io/MapReduceAlgorithms/ed1n.html) - Chp 2 & 3
+with MapReduce](http://lintool.github.io/MapReduceAlgorithms/ed1n.html) - Chapters 2 & 3
 
 * Examples / Code
   - [Split-Apply-Combine and Map-Reduce in R](https://burtmonroe.github.io/SoDA501/Materials/SplitApplyCombine_R/)
