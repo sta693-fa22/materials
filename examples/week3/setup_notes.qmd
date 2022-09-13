@@ -1,0 +1,50 @@
+---
+title: "Setup Notes - Week 3"
+format: 
+  html:
+    self-contained: true
+---
+
+## Google Dataproc
+
+Standard (defaut) configuration - couple things to consider:
+
+* Pick region and zone
+
+* Pick config for Master node
+
+* Pick # and config or worker nodes
+
+  * Persistent storage size determines size of hdfs pool 
+
+* Good idea to include jupyter as an optional component
+
+* Jupyter accessible via `Cluster details` > `Web interfaces`
+
+## Jupyter Lab
+
+### File System 
+
+Will start in `/GCS/` which may be unclear - this is the staging bucket for your cluster, can be seen with:
+
+```
+gsutil ls
+# gs://dataproc-staging-us-east4-1034449174331-0ejz78jy/
+# gs://dataproc-temp-us-east4-1034449174331-odqdujvl/
+```
+
+actual path of `/GCS` is `gs://dataproc-staging-us-east4-1034449174331-0ejz78jy/notebooks/jupyter/`.
+
+Usual file system commands will work with `gsutil` preface - e.g. `gsutil ls`, `gsutil cp`, `gsutil rm`, etc.
+
+
+### mrjob
+
+The required python package is not installed already - can be added via 
+
+```
+pip3 install mrjob
+```
+
+note `pip3` is necessary here otherwise it will be installed for `python2` and not `python3`.
+
