@@ -21,9 +21,31 @@ Standard (defaut) configuration - couple things to consider:
 
 * Jupyter accessible via `Cluster details` > `Web interfaces`
 
-## Jupyter Lab
 
-### File System 
+## Copy data to the master node
+
+In Jupyter's terminal,
+
+```
+mkdir /data
+cd /data
+
+wget https://raw.githubusercontent.com/sta693-fa22/materials/main/examples/week3/hamlet.txt -O hamlet.txt
+
+wget https://raw.githubusercontent.com/sta693-fa22/materials/main/examples/week3/shakespeare.zip -O shakespeare.zip
+```
+
+
+Also we can copy the mrjob scripts, more on this in a bit
+
+```
+wget https://raw.githubusercontent.com/sta693-fa22/materials/main/examples/week3/shakespeare.zip -O shakespeare.zip
+
+wget https://raw.githubusercontent.com/sta693-fa22/materials/main/examples/week3/shakespeare.zip -O shakespeare.zip
+
+```
+
+### Jupyter + File System 
 
 Will start in `/GCS/` which may be unclear - this is the staging bucket for your cluster, can be seen with:
 
@@ -47,4 +69,25 @@ pip3 install mrjob
 ```
 
 note `pip3` is necessary here otherwise it will be installed for `python2` and not `python3`.
+
+
+### hdfs
+
+Dataproc takes care of installation and configuration, should be accessible via `hdfs`,
+
+```
+hdfs dfs -ls hdfs:///
+
+hdfs dfs -mkdir hdfs:///data/
+
+hdfs dfs -ls hdfs://
+hdfs dfs -ls hdfs:///data/
+
+hdfs dfs -put ./hamlet.txt hdfs:///data/
+hdfs dfs -ls hdfs:///data/
+
+hdfs dfs -get hdfs:///data/hamlet.txt ./hamlet2.txt
+```
+
+### Running MapReduce jobs with mrjobs
 
