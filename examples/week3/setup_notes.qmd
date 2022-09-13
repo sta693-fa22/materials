@@ -30,9 +30,9 @@ In Jupyter's terminal,
 mkdir /data
 cd /data
 
-wget https://raw.githubusercontent.com/sta693-fa22/materials/main/examples/week3/hamlet.txt -O hamlet.txt
+wget https://raw.githubusercontent.com/sta693-fa22/materials/main/examples/week3/hamlet.txt
 
-wget https://raw.githubusercontent.com/sta693-fa22/materials/main/examples/week3/shakespeare.zip -O shakespeare.zip
+wget https://raw.githubusercontent.com/sta693-fa22/materials/main/examples/week3/shakespeare.zip
 ```
 
 
@@ -91,3 +91,8 @@ hdfs dfs -get hdfs:///data/hamlet.txt ./hamlet2.txt
 
 ### Running MapReduce jobs with mrjobs
 
+mrjob can run the job using hadoop - we just need to specify the runner with `-r` and provide the path to the inputs on the hdfs.
+
+```
+python3 word_count.py -r hadoop hdfs:///data/hamlet.txt
+```

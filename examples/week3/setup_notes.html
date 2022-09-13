@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.2.89">
+<meta name="generator" content="quarto-1.2.95">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -452,18 +452,21 @@ window.document.addEventListener("DOMContentLoaded", function (_event) {
   const marginChildren = window.document.querySelectorAll(
     ".column-margin.column-container > * "
   );
-  let lastBottom = 0;
-  for (const marginChild of marginChildren) {
-    const top = marginChild.getBoundingClientRect().top;
-    if (top < lastBottom) {
-      const margin = lastBottom - top;
-      marginChild.style.marginTop = `${margin}px`;
-    }
-    const styles = window.getComputedStyle(marginChild);
-    const marginTop = parseFloat(styles["marginTop"]);
 
-    lastBottom = top + marginChild.getBoundingClientRect().height + marginTop;
-  }
+  nexttick(() => {
+    let lastBottom = 0;
+    for (const marginChild of marginChildren) {
+      const top = marginChild.getBoundingClientRect().top;
+      if (top < lastBottom) {
+        const margin = lastBottom - top;
+        marginChild.style.marginTop = `${margin}px`;
+      }
+      const styles = window.getComputedStyle(marginChild);
+      const marginTop = parseFloat(styles["marginTop"]);
+
+      lastBottom = top + marginChild.getBoundingClientRect().height + marginTop;
+    }
+  });
 
   // Manage the visibility of the toc and the sidebar
   const marginScrollVisibility = manageSidebarVisiblity(marginSidebarEl, {
@@ -789,6 +792,10 @@ function throttle(func, wait) {
       }, wait);
     }
   };
+}
+
+function nexttick(func) {
+  return setTimeout(func, 0);
 }
 </script>
 <script>/**
@@ -2562,10 +2569,22 @@ vertical-align: -.125em;
 <li><p>Jupyter accessible via <code>Cluster details</code> &gt; <code>Web interfaces</code></p></li>
 </ul>
 </section>
-<section id="jupyter-lab" class="level2">
-<h2 class="anchored" data-anchor-id="jupyter-lab">Jupyter Lab</h2>
-<section id="file-system" class="level3">
-<h3 class="anchored" data-anchor-id="file-system">File System</h3>
+<section id="copy-data-to-the-master-node" class="level2">
+<h2 class="anchored" data-anchor-id="copy-data-to-the-master-node">Copy data to the master node</h2>
+<p>In Jupyter’s terminal,</p>
+<pre><code>mkdir /data
+cd /data
+
+wget https://raw.githubusercontent.com/sta693-fa22/materials/main/examples/week3/hamlet.txt
+
+wget https://raw.githubusercontent.com/sta693-fa22/materials/main/examples/week3/shakespeare.zip</code></pre>
+<p>Also we can copy the mrjob scripts, more on this in a bit</p>
+<pre><code>wget https://raw.githubusercontent.com/sta693-fa22/materials/main/examples/week3/shakespeare.zip -O shakespeare.zip
+
+wget https://raw.githubusercontent.com/sta693-fa22/materials/main/examples/week3/shakespeare.zip -O shakespeare.zip
+</code></pre>
+<section id="jupyter-file-system" class="level3">
+<h3 class="anchored" data-anchor-id="jupyter-file-system">Jupyter + File System</h3>
 <p>Will start in <code>/GCS/</code> which may be unclear - this is the staging bucket for your cluster, can be seen with:</p>
 <pre><code>gsutil ls
 # gs://dataproc-staging-us-east4-1034449174331-0ejz78jy/
@@ -2578,6 +2597,26 @@ vertical-align: -.125em;
 <p>The required python package is not installed already - can be added via</p>
 <pre><code>pip3 install mrjob</code></pre>
 <p>note <code>pip3</code> is necessary here otherwise it will be installed for <code>python2</code> and not <code>python3</code>.</p>
+</section>
+<section id="hdfs" class="level3">
+<h3 class="anchored" data-anchor-id="hdfs">hdfs</h3>
+<p>Dataproc takes care of installation and configuration, should be accessible via <code>hdfs</code>,</p>
+<pre><code>hdfs dfs -ls hdfs:///
+
+hdfs dfs -mkdir hdfs:///data/
+
+hdfs dfs -ls hdfs://
+hdfs dfs -ls hdfs:///data/
+
+hdfs dfs -put ./hamlet.txt hdfs:///data/
+hdfs dfs -ls hdfs:///data/
+
+hdfs dfs -get hdfs:///data/hamlet.txt ./hamlet2.txt</code></pre>
+</section>
+<section id="running-mapreduce-jobs-with-mrjobs" class="level3">
+<h3 class="anchored" data-anchor-id="running-mapreduce-jobs-with-mrjobs">Running MapReduce jobs with mrjobs</h3>
+<p>mrjob can run the job using hadoop - we just need to specify the runner with <code>-r</code> and provide the path to the inputs on the hdfs.</p>
+<pre><code>python3 word_count.py -r hadoop hdfs:///data/hamlet.txt</code></pre>
 </section>
 </section>
 
