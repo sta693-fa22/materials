@@ -17,11 +17,19 @@ with MapReduce](http://lintool.github.io/MapReduceAlgorithms/ed1n.html) - Chapte
 
   - [Hadoop with Python](https://pepa.holla.cz/wp-content/uploads/2016/10/hadoop-with-python.pdf) - Chapters 1 & 2
 
-### Week n Spark
+### Week 4 - Spark
 
-* 
+* SparkR - [Practical Guide](https://spark.apache.org/docs/latest/api/R/articles/sparkr-vignettes.html)
 
-### Week 2+1 DuckDB
+* SparkR - [Reference](https://spark.apache.org/docs/latest/api/R/reference/index.html)
+
+* sparklyr - [Basics](https://spark.rstudio.com/guides/dplyr.html)
+
+* [NYC Taxi data](https://github.com/toddwschneider/nyc-taxi-data)
+
+## TODO
+
+### Week n+1 DuckDB
 
 * 
 
@@ -30,7 +38,7 @@ with MapReduce](http://lintool.github.io/MapReduceAlgorithms/ed1n.html) - Chapte
 * 
 
 
-## Potential later topics (to be scheduled)
+### Potential later topics (to be scheduled)
 
 * SQL (Webasm postgres)
 
