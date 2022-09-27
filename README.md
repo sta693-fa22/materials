@@ -27,6 +27,15 @@ with MapReduce](http://lintool.github.io/MapReduceAlgorithms/ed1n.html) - Chapte
 
 * [NYC Taxi data](https://github.com/toddwschneider/nyc-taxi-data)
 
+
+### Week 5 - Spark MLlib
+
+* sparklyr [overview](https://spark.rstudio.com/guides/mlib.html)
+
+* sparklyr [pipelines](https://spark.rstudio.com/guides/pipelines.html)
+
+* sparklyr [tuning](https://spark.rstudio.com/guides/model_tuning.html)
+
 ## TODO
 
 ### Week n+1 DuckDB

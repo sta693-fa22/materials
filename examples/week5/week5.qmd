@@ -1,0 +1,325 @@
+---
+title: "Spark MLlib"
+format: 
+  html:
+    self-contained: true
+---
+
+## Setup
+
+To make my life easier, we'll be running spark locally this week - sparklyr can be used to install a local copy
+
+```{r}
+#| eval: false
+# Get the latest version
+sparklyr::spark_install(version= "3.3", hadoop_version = "3")
+```
+
+We won't get all the HDFS stuff but if we're just working with data that will fit in memeory we can prototype this way.
+
+### Connect to local spark with sparklyr
+
+```{r}
+library(sparklyr)
+library(tidyverse)
+
+sc = sparklyr::spark_connect("local", version="3.3")
+```
+
+### Connect to local spark with SparkR
+
+The SparkR package is bundled with the spark distribution, so we need to add it to `.libPaths()` so we can load it. `sparklyr::spark_home_dir()` tells us where sparklyr installed spark, SparkR will then be inside the `R/lib/` path from there.
+
+```{r eval=FALSE}
+.libPaths(c(
+  file.path(sparklyr::spark_home_dir(), 'R/lib/'),
+  .libPaths()
+))
+```
+
+```{r eval=FALSE}
+# Careful loading this after sparklyr - function name collision issues
+library(SparkR)
+```
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+# My laptop has a version of java that SparkR doesn't like
+# so I need to tell it where to find an older version
+# (installed via homebrew)
+Sys.setenv("JAVA_HOME" = "/opt/homebrew/opt/openjdk@17/")
+
+sparkR.session(
+  master = "local[*]",
+  sparkHome = sparklyr::spark_home_dir()
+)
+```
+
+
+## sparklyr & MLlib
+
+
+### kmeans
+
+
+
+```{r}
+iris_tbl = copy_to(sc, iris, "iris", overwrite = TRUE)
+```
+
+```{r}
+( kmeans = iris_tbl %>%
+    ml_kmeans(k = 3, features = c("Petal_Length", "Petal_Width")) 
+)
+```
+
+```{r}
+ml_predict(kmeans, iris_tbl) %>%
+  sparklyr::collect() %>%
+  {table(.$Species, .$prediction)}
+```
+
+
+
+### Linear regression
+
+```{r}
+flights = copy_to(sc, nycflights13::flights, "flights", overwrite=TRUE)
+```
+
+Lets try predicting `arr_delay` based on `dep_delay`,
+
+```{r error=TRUE}
+flights %>%
+  ml_linear_regression(arr_delay ~ dep_delay)
+```
+
+this results in a giant aweful error where it is not clear what the cause is - turns out it is `NA`s messing things up
+
+```{r}
+( l = flights %>%
+    filter(!is.na(arr_delay), !is.na(dep_delay)) %>%
+    ml_linear_regression(arr_delay ~ dep_delay) )
+```
+
+Some of the base R functions work, others won't for inspecting the model results
+
+```{r error=TRUE}
+coefficients(l)
+residuals(l)
+```
+
+Summary statistics are available from the `ml_summary()` function 
+
+```{r}
+ml_summary(l)
+```
+
+Scalar values are referenced just by name, vectors require using `()`.
+
+```{r}
+ml_summary(l)$p_values()
+ml_summary(l, "t_values")()
+ml_summary(l)$r2
+ml_summary(l)$residuals() 
+```
+
+### Measuring performance
+
+First lets split our data into test and training,
+
+```{r}
+( flights_split = flights %>%
+    filter(!is.na(arr_delay), !is.na(dep_delay)) %>%
+    sdf_random_split(training = 0.7, test = 0.3, seed = 1234)
+)
+```
+
+and fit the model using just the training data,
+
+```{r}
+( l = ml_linear_regression(flights_split$training, arr_delay ~ dep_delay) )
+```
+
+and then create predictions for training and test
+
+```{r}
+l_train_pred = ml_predict(l, flights_split$training)
+l_test_pred = ml_predict(l, flights_split$test)
+```
+
+Now we can evaluate our preformance using the appropriate evaluator function: `ml_binary_classification_evaluator()`, `ml_multiclass_classification_evaluator()`, `ml_regression_evaluator()`.
+
+```{r}
+ml_regression_evaluator(l_train_pred, label_col = "arr_delay")
+ml_regression_evaluator(l_test_pred, label_col = "arr_delay")
+```
+
+The default reported value for regression is the rmse - this can be changed via `metric_name` to: `rmse`, `mse`, `r2`, or `mae`.
+
+```{r}
+ml_regression_evaluator(l_train_pred, label_col = "arr_delay", metric_name = "r2")
+ml_regression_evaluator(l_test_pred, label_col = "arr_delay", metric_name = "r2")
+```
+
+### Pipelines
+
+Similar to sklearn and other ML libraries - Spark MLlib supports the construction of pipelines using a series of transformers. See a list of the available transformers [here](https://spark.apache.org/docs/latest/ml-features.html).
+
+#### dplyr transformers
+
+Any of our dplyr -> spark sql code can be included as a transformer by using sparklyr's `ft_dplyr_transformer()` which takes a dplyr pipeline, translates it into SQL, which is then used within a spark SQL transformer.
+
+*dplyr pipeline*:
+```{r}
+flights %>%
+  filter(!is.na(dep_delay)) %>%
+  mutate(
+    month = paste0("m", month),
+    day = paste0("d", day)
+  ) %>%
+  select(dep_delay, sched_dep_time, month, day, distance, carrier, origin) %>%
+  dplyr::show_query()
+```
+
+*SQL transformer*:
+```{r}
+ft_dplyr_transformer(
+  sc,
+  tbl = flights %>%
+    filter(!is.na(dep_delay)) %>%
+    mutate(
+      month = paste0("m", month),
+      day = paste0("d", day)
+    ) %>%
+    select(dep_delay, sched_dep_time, month, day, distance, carrier, origin)
+) #%>%
+  #ml_param("statement") %>%
+  #cat()
+```
+
+#### Making a pipeline
+
+We start the pipeline with a call to `ml_pipeline()` and then add transformer steps via piping,
+
+```{r}
+( pipe = ml_pipeline(sc) %>%
+    ft_dplyr_transformer(
+      tbl = flights %>%
+        filter(!is.na(dep_delay)) %>%
+        mutate(
+          month = paste0("m", month),
+          day = paste0("d", day)
+        ) %>%
+        select(dep_delay, sched_dep_time, month, day, distance, carrier, origin)
+    ) %>%
+    ft_binarizer(
+      input_col = "dep_delay",
+      output_col = "delayed",
+      threshold = 15
+    ) %>%
+    ft_bucketizer(
+      input_col = "sched_dep_time",
+      output_col = "hours",
+      splits = c(400, 800, 1200, 1600, 2000, 2400)
+    )
+)
+```
+
+Just like with sklearn using a pipeline involves two steps - fitting and transforming which can be achieved using `ml_fit()` and `ml_transform()` respectively (or `ml_fit_and_transform()` to do both at the same time). As before it is important to fit only using the training data.
+
+```{r}
+ml_fit_and_transform(pipe, flights) %>%
+  dplyr::count(delayed)
+```
+
+Once created pipelines can be serialized to disk via `ml_save()` or restored from file via `ml_load`.
+
+
+
+#### Logistic regression vs decision tree
+
+```{r}
+log_pipe = pipe %>%
+  ft_r_formula(delayed ~ month + day + hours + distance + carrier + origin) %>%
+  ml_logistic_regression()
+
+tree_pipe = pipe %>%
+  ft_r_formula(delayed ~ month + day + hours + distance + carrier + origin) %>%
+  ml_decision_tree_classifier()
+```
+
+Lets fit the two models to the training data
+
+```{r}
+log_pipe_fit = ml_fit(log_pipe, flights_split$training)
+tree_pipe_fit = ml_fit(tree_pipe, flights_split$training)
+```
+
+and transform (predict) both models using both training and testing
+
+```{r}
+log_pipe_pred_train = ml_transform(log_pipe_fit, flights_split$training)
+log_pipe_pred_test  = ml_transform(log_pipe_fit, flights_split$test)
+
+tree_pipe_pred_train = ml_transform(tree_pipe_fit, flights_split$training)
+tree_pipe_pred_test  = ml_transform(tree_pipe_fit, flights_split$test)
+```
+
+Now we can check how we've done using the `ml_binary_classification_evaluator()` which returns AUC by default 
+
+```{r}
+ml_binary_classification_evaluator(log_pipe_pred_train,  label_col = "delayed")     
+ml_binary_classification_evaluator(log_pipe_pred_test,   label_col = "delayed")    
+
+ml_binary_classification_evaluator(tree_pipe_pred_train, label_col = "delayed")      
+ml_binary_classification_evaluator(tree_pipe_pred_test,  label_col = "delayed")     
+```
+
+Also not we're not just stuck with sparklyr - we can always bring stuff back into R (size permitting) and use tools like yardstick.
+
+```{r}
+clean = function(x, model) {
+  x %>% 
+    sdf_separate_column("probability", c("p0", "p1")) %>%
+    mutate(model = model) %>% 
+    select(delayed, prediction, p1, model) %>%
+    collect()
+}
+
+res = bind_rows(
+  log_pipe_pred_train  %>% clean(model = "logr - train"),
+  log_pipe_pred_test   %>% clean(model = "logr - test"),
+  tree_pipe_pred_train %>% clean(model = "tree - train"),
+  tree_pipe_pred_test  %>% clean(model = "tree - test")
+) %>%
+  group_by(model) %>%
+  mutate(
+    delayed = factor(delayed, levels = c(1,0)),
+    prediction = factor(prediction, levels = c(1,0))
+  ) 
+```
+
+
+#### Accuracy
+
+```{r}
+res %>%
+  yardstick::accuracy(truth = delayed, prediction)
+```
+
+#### ROC Curve
+
+```{r}
+res %>%
+  yardstick::roc_curve(truth = delayed, p1) %>%
+  ggplot2::autoplot()
+```
+
+
+#### PR Curve
+
+```{r}
+res %>%
+  yardstick::pr_curve(truth = delayed, p1) %>%
+  ggplot2::autoplot()
+```
