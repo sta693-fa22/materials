@@ -1,0 +1,227 @@
+---
+format: html
+---
+
+## Install
+
+```{r}
+#sparklyr::spark_install("3.3", "3")
+```
+
+## Open a connect
+
+```{r}
+library(sparklyr)
+sc = spark_connect(master="local", version="3.3")
+``` 
+
+## MLlib
+
+```{r}
+library(dplyr)
+```
+
+### kmeans
+
+```{r}
+( iris_tbl = copy_to(sc, iris, "iris") )
+```
+
+```{r}
+km = ml_kmeans(iris_tbl, k=3, ~ Petal_Length+Petal_Width+Sepal_Length+Sepal_Width)
+ml_predict(km, iris_tbl) %>%
+  collect() %>%
+  {table(.$Species, .$prediction)}
+```
+
+## Linear regression
+
+```{r}
+( flights = copy_to(sc, nycflights13::flights, "flights") )
+```
+
+
+```{r}
+l = flights %>%
+  filter(!is.na(arr_delay), !is.na(dep_delay)) %>%
+  ml_linear_regression(arr_delay ~ dep_delay)
+```
+
+```{r}
+summary(l)
+coefficients(l)
+residuals(l)
+```
+
+```{r}
+ml_summary(l, "p_values")()
+ml_summary(l, "r2")
+
+ml_summary(l)$t_values()
+ml_summary(l)$residuals()
+```
+
+
+## Cross validation & evaluation
+
+```{r}
+flights_split = flights %>%
+  filter(!is.na(arr_delay), !is.na(dep_delay)) %>%
+  sdf_random_split(training=0.75, test=0.25, seed=1234)
+
+flights_split$training
+```
+
+```{r}
+lm = flights_split$training %>%
+  ml_linear_regression(arr_delay~dep_delay)
+```
+
+```{r}
+lm %>%
+  ml_predict(flights_split$training) %>%
+  ml_regression_evaluator(label_col = "arr_delay")
+
+lm %>%
+  ml_predict(flights_split$test) %>%
+  ml_regression_evaluator(label_col = "arr_delay")
+```
+
+
+## Pipelines
+
+### dplyr pipeline
+
+```{r}
+flights %>%
+  filter(!is.na(dep_delay)) %>%
+  mutate(
+    month = paste0("m", month),
+    day = paste0("d", day)
+  ) %>%
+  select(
+    dep_delay, sched_dep_time, month, day, distance, carrier, origin
+  )
+```
+
+```{r}
+ft_dplyr_transformer(
+  sc,
+  tbl = flights %>%
+    filter(!is.na(dep_delay)) %>%
+    mutate(
+      month = paste0("m", month),
+      day = paste0("d", day)
+    ) %>%
+    select(
+      dep_delay, sched_dep_time, month, day, distance, carrier, origin
+    )
+) #%>%
+  #ml_param("statement") %>%
+  #cat()
+```
+### spark pipeline
+
+```{r}
+pipe = ml_pipeline(sc) %>%
+  ft_dplyr_transformer(
+    tbl = flights %>%
+      filter(!is.na(dep_delay)) %>%
+      mutate(
+        month = paste0("m", month),
+        day = paste0("d", day)
+      ) %>%
+      select(
+        dep_delay, sched_dep_time, month, day, distance, carrier, origin
+      )
+  ) %>%
+  ft_binarizer(
+    input_col = "dep_delay",
+    output_col = "delayed",
+    threshold = 10
+  ) %>%
+  ft_bucketizer(
+    input_col = "sched_dep_time",
+    output_col = "hours",
+    splits = c(0, 400, 800, 1200, 1600, 2000, 2400)
+  )
+```
+
+```{r}
+pipe %>% ml_fit(flights) %>% ml_transform(flights)
+```
+
+```{r}
+pipe %>% ml_fit_and_transform(flights)
+```
+
+```{r}
+(log_reg = pipe %>%
+  ft_r_formula(delayed ~ month + day + hours + distance + carrier + origin) %>%
+  ml_logistic_regression())
+```
+
+```{r}
+#ml_save(log_reg, path = "~/tmp/log_reg_model")
+#ml_load(sc, "~/tmp/log_reg_model")
+```
+
+```{r}
+log_reg %>% 
+  ml_fit(flights_split$training) %>% 
+  ml_transform(flights_split$training) %>% 
+  ml_binary_classification_evaluator()
+```
+
+```{r}
+log_reg %>% 
+  ml_fit(flights_split$training) %>% 
+  ml_transform(flights_split$test) %>% 
+  ml_binary_classification_evaluator()
+```
+
+```{r}
+(tree = pipe %>%
+  ft_r_formula(delayed ~ month + day + hours + distance + carrier + origin) %>%
+  ml_random_forest_classifier())
+```
+
+```{r}
+tree %>% 
+  ml_fit(flights_split$training) %>% 
+  ml_transform(flights_split$training) %>% 
+  ml_binary_classification_evaluator(metric_name = "areaUnderPR")
+```
+
+```{r}
+tree %>% 
+  ml_fit(flights_split$training) %>% 
+  ml_transform(flights_split$test) %>% 
+  ml_binary_classification_evaluator(metric_name = "areaUnderPR")
+```
+
+### More details
+
+```{r}
+res = tree %>% 
+  ml_fit(flights_split$training) %>% 
+  ml_transform(flights_split$test)
+```
+
+```{r}
+res
+```
+
+```{r}
+res %>% 
+  sdf_separate_column("probability", into = c("p0","p1")) %>%
+  select(label, prediction, p0, p1) %>%
+  collect() %>%
+  mutate(
+    label = factor(label, levels = c(1,0))
+  ) %>%
+  yardstick::roc_curve(
+    label, p1
+  ) %>%
+  ggplot2::autoplot()
+```
