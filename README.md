@@ -45,6 +45,8 @@ with MapReduce](http://lintool.github.io/MapReduceAlgorithms/ed1n.html) - Chapte
 
 * [duckdb + arrow](https://duckdb.org/2021/12/03/duck-arrow.html)
 
+* [duckdb + parquet](https://duckdb.org/2021/06/25/querying-parquet.html)
+
 ## TODO
 
 ### Week n+2 - NoSQL
