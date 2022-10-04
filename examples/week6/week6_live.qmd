@@ -1,0 +1,559 @@
+---
+title: "Week 6 - duckdb"
+format: 
+  html:
+    self-contained: true
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+## Background
+
+DuckDB is an in-process SQL
+[OLAP](https://en.wikipedia.org/wiki/Online_analytical_processing)
+database management system, think SQLite for data analytics.
+
+Core featues:
+
+\* Simple installation
+
+\* Embedded: no server management
+
+\* Single file storage format
+
+\* Fast analytical processing
+
+\* Fast transfer between R, Python, RDBMS, arrow
+
+\* No external config files
+
+\* Fully [ACID](https://en.wikipedia.org/wiki/ACID) through
+[MVCC](https://www.postgresql.org/docs/7.1/mvcc.html)
+
+\* Columnar data storage
+
+![](duckdb.png)
+
+## Setup 
+
+```{r eval=FALSE}
+install.packages("duckdb")
+```
+
+```{r}
+db = duckdb::duckdb(":memory:")
+db_disk = duckdb::duckdb(path.expand("~/Scratch/duck.db"))
+```
+
+```{r}
+( con = DBI::dbConnect(db) )
+```
+
+## Basics
+
+```{r}
+library(tidyverse)
+
+(flights_db = copy_to(con, nycflights13::flights, "flights"))
+```
+
+```{r}
+DBI::dbListTables(con)
+
+```
+
+```{r}
+flights_db %>%
+  group_by(origin) %>%
+  summarize(
+    avg_dep_delay = mean(dep_delay, na.r=TRUE),
+    avg_arr_delay = mean(arr_delay, na.r=TRUE),
+    arr_skewness = skewness(arr_delay)
+  ) %>%
+  collect()
+```
+
+### Efficient transfer of data
+
+```{r}
+duckdb::duckdb_register(con, "flights_r", nycflights13::flights)
+```
+
+```{r}
+DBI::dbListTables(con)
+```
+
+```{r}
+flights_r = tbl(con, "flights_r") 
+
+flights_r %>%
+  group_by(origin) %>%
+  summarize(
+    avg_dep_delay = mean(dep_delay, na.r=TRUE),
+    avg_arr_delay = mean(arr_delay, na.r=TRUE),
+    arr_skewness = skewness(arr_delay)
+  ) %>%
+  collect()
+```
+
+### Benchmarking 
+
+```{r}
+flights_arrow = arrow::InMemoryDataset$create(nycflights13::flights)
+
+process(flights_arrow)
+```
+
+```{r}
+(flights_arrow_db = arrow::to_duckdb(flights_arrow, con))
+
+```
+
+```{r}
+DBI::dbListTables(con)
+```
+
+```{r}
+process = function(x) {
+  x %>%
+    group_by(origin) %>%
+    summarize(
+      avg_dep_delay = mean(dep_delay, na.r=TRUE),
+      avg_arr_delay = mean(arr_delay, na.r=TRUE)
+      #arr_skewness = skewness(arr_delay)
+    ) %>%
+    collect()
+}
+
+bench::mark(
+  db = flights_db %>% process(),
+  r = flights_r %>% process(),
+  arrow = flights_arrow %>% process(),
+  arrow_db = flights_arrow_db %>% process(),
+  check = FALSE
+)
+```
+
+## Out of memory processing
+
+```{r}
+fs::dir_ls("~/Scratch/nyc_taxi/")
+
+```
+
+```{r}
+sum(fs::dir_info("~/Scratch/nyc_taxi/")$size)
+```
+
+```{sql connection=con}
+SELECT COUNT(*) FROM read_parquet('/Users/rundel/Scratch/nyc_taxi/yellow_tripdata_2022-06.parquet')
+```
+
+```{sql connection=con}
+CREATE OR REPLACE TABLE taxi_db AS SELECT * FROM read_parquet('/Users/rundel/Scratch/nyc_taxi/yellow_tripdata_2022-06.parquet') 
+```
+
+```{sql connection=con}
+SELECT COUNT(*) FROM taxi_db
+```
+
+---
+title: "Week 6 - duckdb"
+format: 
+  html:
+    self-contained: true
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+## Background
+
+DuckDB is an in-process SQL
+[OLAP](https://en.wikipedia.org/wiki/Online_analytical_processing)
+database management system, think SQLite for data analytics.
+
+Core featues:
+
+\* Simple installation
+
+\* Embedded: no server management
+
+\* Single file storage format
+
+\* Fast analytical processing
+
+\* Fast transfer between R, Python, RDBMS, arrow
+
+\* No external config files
+
+\* Fully [ACID](https://en.wikipedia.org/wiki/ACID) through
+[MVCC](https://www.postgresql.org/docs/7.1/mvcc.html)
+
+\* Columnar data storage
+
+![](duckdb.png)
+
+## Setup 
+
+```{r eval=FALSE}
+install.packages("duckdb")
+```
+
+```{r}
+db = duckdb::duckdb(":memory:")
+db_disk = duckdb::duckdb(path.expand("~/Scratch/duck.db"))
+```
+
+```{r}
+( con = DBI::dbConnect(db) )
+```
+
+## Basics
+
+```{r}
+library(tidyverse)
+
+(flights_db = copy_to(con, nycflights13::flights, "flights"))
+```
+
+```{r}
+DBI::dbListTables(con)
+
+```
+
+```{r}
+flights_db %>%
+  group_by(origin) %>%
+  summarize(
+    avg_dep_delay = mean(dep_delay, na.r=TRUE),
+    avg_arr_delay = mean(arr_delay, na.r=TRUE),
+    arr_skewness = skewness(arr_delay)
+  ) %>%
+  collect()
+```
+
+### Efficient transfer of data
+
+```{r}
+duckdb::duckdb_register(con, "flights_r", nycflights13::flights)
+```
+
+```{r}
+DBI::dbListTables(con)
+```
+
+```{r}
+flights_r = tbl(con, "flights_r") 
+
+flights_r %>%
+  group_by(origin) %>%
+  summarize(
+    avg_dep_delay = mean(dep_delay, na.r=TRUE),
+    avg_arr_delay = mean(arr_delay, na.r=TRUE),
+    arr_skewness = skewness(arr_delay)
+  ) %>%
+  collect()
+```
+
+### Benchmarking 
+
+```{r}
+flights_arrow = arrow::InMemoryDataset$create(nycflights13::flights)
+
+process(flights_arrow)
+```
+
+```{r}
+(flights_arrow_db = arrow::to_duckdb(flights_arrow, con))
+
+```
+
+```{r}
+DBI::dbListTables(con)
+```
+
+```{r}
+process = function(x) {
+  x %>%
+    group_by(origin) %>%
+    summarize(
+      avg_dep_delay = mean(dep_delay, na.r=TRUE),
+      avg_arr_delay = mean(arr_delay, na.r=TRUE)
+      #arr_skewness = skewness(arr_delay)
+    ) %>%
+    collect()
+}
+
+bench::mark(
+  db = flights_db %>% process(),
+  r = flights_r %>% process(),
+  arrow = flights_arrow %>% process(),
+  arrow_db = flights_arrow_db %>% process(),
+  check = FALSE
+)
+```
+
+## Out of memory processing
+
+```{r}
+fs::dir_ls("~/Scratch/nyc_taxi/")
+
+```
+
+```{r}
+sum(fs::dir_info("~/Scratch/nyc_taxi/")$size)
+```
+
+```{sql connection=con}
+SELECT COUNT(*) FROM read_parquet('/Users/rundel/Scratch/nyc_taxi/yellow_tripdata_2022-06.parquet')
+```
+
+```{sql connection=con}
+CREATE OR REPLACE TABLE taxi_db AS SELECT * FROM read_parquet('/Users/rundel/Scratch/nyc_taxi/yellow_tripdata_2022-06.parquet') 
+```
+
+```{sql connection=con}
+SELECT COUNT(*) FROM taxi_db
+```
+
+---
+title: "Week 6 - duckdb"
+format: 
+  html:
+    self-contained: true
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+## Background
+
+DuckDB is an in-process SQL
+[OLAP](https://en.wikipedia.org/wiki/Online_analytical_processing)
+database management system, think SQLite for data analytics.
+
+Core featues:
+
+\* Simple installation
+
+\* Embedded: no server management
+
+\* Single file storage format
+
+\* Fast analytical processing
+
+\* Fast transfer between R, Python, RDBMS, arrow
+
+\* No external config files
+
+\* Fully [ACID](https://en.wikipedia.org/wiki/ACID) through
+[MVCC](https://www.postgresql.org/docs/7.1/mvcc.html)
+
+\* Columnar data storage
+
+![](duckdb.png)
+
+## Setup 
+
+```{r eval=FALSE}
+install.packages("duckdb")
+```
+
+```{r}
+db = duckdb::duckdb(":memory:")
+db_disk = duckdb::duckdb(path.expand("~/Scratch/duck.db"))
+```
+
+```{r}
+( con = DBI::dbConnect(db) )
+```
+
+## Basics
+
+```{r}
+library(tidyverse)
+
+(flights_db = copy_to(con, nycflights13::flights, "flights"))
+```
+
+```{r}
+DBI::dbListTables(con)
+
+```
+
+```{r}
+flights_db %>%
+  group_by(origin) %>%
+  summarize(
+    avg_dep_delay = mean(dep_delay, na.r=TRUE),
+    avg_arr_delay = mean(arr_delay, na.r=TRUE),
+    arr_skewness = skewness(arr_delay)
+  ) %>%
+  collect()
+```
+
+### Efficient transfer of data
+
+```{r}
+duckdb::duckdb_register(con, "flights_r", nycflights13::flights)
+```
+
+```{r}
+DBI::dbListTables(con)
+```
+
+```{r}
+flights_r = tbl(con, "flights_r") 
+
+flights_r %>%
+  group_by(origin) %>%
+  summarize(
+    avg_dep_delay = mean(dep_delay, na.r=TRUE),
+    avg_arr_delay = mean(arr_delay, na.r=TRUE),
+    arr_skewness = skewness(arr_delay)
+  ) %>%
+  collect()
+```
+
+### Benchmarking 
+
+```{r}
+flights_arrow = arrow::InMemoryDataset$create(nycflights13::flights)
+
+process(flights_arrow)
+```
+
+```{r}
+(flights_arrow_db = arrow::to_duckdb(flights_arrow, con))
+
+```
+
+```{r}
+DBI::dbListTables(con)
+```
+
+```{r}
+process = function(x) {
+  x %>%
+    group_by(origin) %>%
+    summarize(
+      avg_dep_delay = mean(dep_delay, na.r=TRUE),
+      avg_arr_delay = mean(arr_delay, na.r=TRUE)
+      #arr_skewness = skewness(arr_delay)
+    ) %>%
+    collect()
+}
+
+bench::mark(
+  db = flights_db %>% process(),
+  r = flights_r %>% process(),
+  arrow = flights_arrow %>% process(),
+  arrow_db = flights_arrow_db %>% process(),
+  check = FALSE
+)
+```
+
+## Out of memory processing
+
+```{r}
+fs::dir_ls("~/Scratch/nyc_taxi/")
+
+```
+
+```{r}
+sum(fs::dir_info("~/Scratch/nyc_taxi/")$size)
+```
+
+```{sql connection=con}
+SELECT COUNT(*) FROM read_parquet('/Users/rundel/Scratch/nyc_taxi/yellow_tripdata_2022-06.parquet')
+```
+
+```{sql connection=con}
+CREATE OR REPLACE TABLE taxi_db AS SELECT * FROM read_parquet('/Users/rundel/Scratch/nyc_taxi/yellow_tripdata_2022-06.parquet') 
+```
+
+```{sql connection=con}
+SELECT COUNT(*) FROM taxi_db
+```
+
+```{sql connection=con}
+CREATE OR REPLACE VIEW taxi_view AS SELECT * FROM read_parquet('/Users/rundel/Scratch/nyc_taxi/yellow_tripdata_2022-06.parquet')
+```
+
+```{r}
+DBI::dbListTables(con)
+```
+
+```{r}
+taxi_db = tbl(con, "taxi_db")
+taxi_view = tbl(con, "taxi_view")
+
+taxi_db
+```
+
+```{r}
+bench::mark(
+  taxi_db %>%
+    group_by(VendorID) %>%
+    summarize(median(trip_distance)),
+  taxi_view %>%
+    group_by(VendorID) %>%
+    summarize(median(trip_distance)),
+  check=FALSE
+)
+
+```
+
+### Using globs
+
+```{sql connection=con}
+CREATE VIEW taxi_full AS SELECT * FROM read_parquet('/Users/rundel/Scratch/nyc_taxi/yellow_tripdata_*.parquet')
+```
+
+```{r}
+full = tbl(con, "taxi_full")
+count(full)
+```
+
+```{r}
+full %>%
+  group_by(PULocationID) %>%
+  summarize(
+    avg_passengers = mean(passenger_count),
+    avg_dist = mean(trip_distance),
+    #med_dist = median(trip_distance),
+  ) %>%
+  arrange(PULocationID) %>%
+  collect()
+```
+
+\
+
+```{r}
+full %>%
+  group_by(PULocationID) %>%
+  summarize(
+    avg_passengers = mean(passenger_count),
+    avg_dist = mean(trip_distance),
+    med_dist = median(trip_distance),
+  ) %>%
+  arrange(PULocationID) %>%
+  show_query()
+```
+
+```{r}
+DBI::dbGetQuery(
+  con,
+  "EXPLAIN SELECT
+    PULocationID,
+    AVG(passenger_count) AS avg_passengers,
+    AVG(trip_distance) AS avg_dist,
+    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY trip_distance) AS med_dist
+  FROM taxi_full
+  GROUP BY PULocationID
+  ORDER BY PULocationID
+  "
+)
+```
