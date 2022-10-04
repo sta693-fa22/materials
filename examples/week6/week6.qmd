@@ -1,0 +1,296 @@
+---
+title: "Week 6 - duckdb"
+format: 
+  html:
+    self-contained: true
+---
+
+
+## Background
+
+DuckDB is an in-process SQL [OLAP](https://en.wikipedia.org/wiki/Online_analytical_processing) database management system, think SQLite for data analytics.
+
+Core featues:
+* Simple installation
+* Embedded: no server management
+* Single file storage format
+* Fast analytical processing
+* Fast transfer between R, Python, RDBMS, arrow
+* No external config files
+* Fully [ACID](https://en.wikipedia.org/wiki/ACID) through [MVCC](https://www.postgresql.org/docs/7.1/mvcc.html)
+* Columnar data storage
+
+![](duckdb.png)
+
+
+## Setup
+
+Installation is simple for both R and Python,
+
+```{r eval=FALSE}
+install.packages("duckdb")
+```
+
+```shell
+pip install duckdb
+```
+
+
+## db connection
+
+Like SQLite and other databases we'll need to create a database and then a connection for duckdb, this can either be an in memory database or a file on disk
+
+```{r}
+db_mem = duckdb::duckdb(":memory:") # default
+db_file = duckdb::duckdb(path.expand("~/Scratch/duckdb.db"))
+```
+
+```{r}
+(con = duckdb::dbConnect(db_mem))
+```
+
+
+## Basics
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+(flights_db = copy_to(con, nycflights13::flights, name = "flights"))
+```
+
+```{r}
+duckdb::dbListTables(con)
+```
+
+```{r}
+flights_db %>%
+  group_by(origin) %>%
+  summarize(
+    avg_delay_dep = mean(dep_delay, na.rm=TRUE),
+    avg_delay_are = mean(dep_delay, na.rm=TRUE)
+  ) %>%
+  collect()
+```
+
+### Efficient transfer
+
+It is possible to make an R data frame accessible within duckdb without copying the data using `duckdb_register()` which creates a virtual table (similar to an SQL view).
+
+```{r}
+duckdb::duckdb_register(con, name = "flights_r", df = nycflights13::flights)
+(flights_r = tbl(con, "flights_r") )
+```
+
+This can also be done with data in the arrow format via `arrow::to_duckdb()`
+
+```{r}
+( flights_arrow = arrow::InMemoryDataset$create(nycflights13::flights) )
+```
+
+```{r}
+(flights_arrow_db = flights_arrow %>% arrow::to_duckdb())
+```
+
+
+### Performance implications
+
+```{r}
+process = function(x) {
+  x %>% 
+    group_by(origin) %>%
+    summarize(
+      avg_delay_dep = mean(dep_delay, na.rm=TRUE),
+      avg_delay_are = mean(dep_delay, na.rm=TRUE)
+    ) %>%
+    collect()
+}
+
+
+bench::mark(
+  db = flights_db %>% process(),
+  view = flights_r %>% process(),
+  arrow = flights_arrow %>% process(),
+  arrow_db = flights_arrow_db %>% process(),
+  check = FALSE
+)
+```
+
+## Out-of-memory processing
+
+```{r}
+fs::dir_info("~/Scratch/nyc_taxi/")
+sum(fs::dir_info("~/Scratch/nyc_taxi/")$size)
+```
+
+As far as I can tell there is no R level conveincence function for reading in parquet files at the moment - so this will need to be done via the SQL interface.
+
+A file can be directly queried by including it in a SELECT statement,
+```{r}
+DBI::dbGetQuery(
+  con, 
+  "SELECT COUNT(*)
+  FROM read_parquet('/Users/rundel/Scratch/nyc_taxi/yellow_tripdata_2022-06.parquet')"
+)
+```
+
+or a view can be created (no data copying)
+
+```{r}
+DBI::dbSendQuery(
+  con, 
+  "CREATE VIEW taxi AS 
+    SELECT * 
+    FROM read_parquet('/Users/rundel/Scratch/nyc_taxi/yellow_tripdata_2022-06.parquet')"
+)
+```
+
+or a full duckdb table can be created (data copied)
+
+```{r}
+DBI::dbSendQuery(
+  con, 
+  "CREATE VIEW taxi_tbl AS 
+    SELECT * 
+    FROM read_parquet('/Users/rundel/Scratch/nyc_taxi/yellow_tripdata_2022-06.parquet')"
+)
+```
+
+```{r}
+DBI::dbListTables(con)
+```
+
+Both the view and table can be interacted with as you would expect,
+
+```{r}
+DBI::dbGetQuery(con, "SELECT * FROM taxi LIMIT 10") %>% as_tibble()
+DBI::dbGetQuery(con, "SELECT COUNT(*) FROM taxi") %>% as_tibble()
+```
+
+```{r}
+DBI::dbGetQuery(con, "SELECT * FROM taxi_tbl LIMIT 10") %>% as_tibble()
+DBI::dbGetQuery(con, "SELECT COUNT(*) FROM taxi_tbl") %>% as_tibble()
+```
+
+### Parquet schema
+
+If you want details on the contents of the parquet file (without reading everything in) you can use `DESCRIBE` or `parquet_schema()`,
+
+```{r}
+DBI::dbGetQuery(
+  con, 
+  "DESCRIBE SELECT *
+  FROM read_parquet('/Users/rundel/Scratch/nyc_taxi/yellow_tripdata_2022-06.parquet')"
+) %>% as_tibble()
+```
+
+```{r}
+DBI::dbGetQuery(
+  con, 
+  "SELECT *
+  FROM parquet_schema('/Users/rundel/Scratch/nyc_taxi/yellow_tripdata_2022-06.parquet')"
+) %>% as_tibble()
+```
+
+
+### Reading multiple files
+
+We can use globs with the `read_parquet()` function to read in multiple files
+
+Querying all data from the 2020's:
+```{r}
+DBI::dbGetQuery(
+  con, 
+  "SELECT COUNT(*), MIN(tpep_pickup_datetime), MAX(tpep_pickup_datetime)
+   FROM read_parquet('/Users/rundel/Scratch/nyc_taxi/yellow_tripdata_202*.parquet')"
+) %>% as_tibble()
+```
+
+Querying all data:
+```{r}
+DBI::dbGetQuery(
+  con, 
+  "SELECT COUNT(*)
+   FROM read_parquet('/Users/rundel/Scratch/nyc_taxi/yellow_tripdata_*.parquet')"
+) %>% as_tibble()
+```
+
+Full data schema:
+
+```{r}
+DBI::dbGetQuery(
+  con, 
+  "DESCRIBE SELECT *
+   FROM read_parquet('/Users/rundel/Scratch/nyc_taxi/yellow_tripdata_*.parquet')"
+) %>% as_tibble()
+```
+
+
+### Full data exploration
+
+```{r}
+DBI::dbSendQuery(
+  con, 
+  "CREATE OR REPLACE VIEW taxi_full AS 
+    SELECT * 
+    FROM read_parquet('/Users/rundel/Scratch/nyc_taxi/yellow_tripdata_*.parquet')"
+)
+
+(full = tbl(con, "taxi_full"))
+```
+
+```{r}
+full %>% count()
+```
+
+```{r}
+full %>% 
+  summarize(
+    max_passenger = max(passenger_count),
+    min_dist = min(trip_distance),
+    max_dist = max(trip_distance),
+    avg_dist = mean(trip_distance)
+  )
+```
+
+```{r}
+full %>% 
+  group_by(PULocationID) %>%
+  summarize(
+    n = n(),
+    avg_passenger = mean(passenger_count),
+    avg_dist = mean(trip_distance)
+  ) %>%
+  arrange(PULocationID)
+```
+```{r}
+full %>% 
+  group_by(PULocationID) %>%
+  summarize(
+    n = n(),
+    avg_passenger = mean(passenger_count),
+    avg_dist = mean(trip_distance)
+  ) %>%
+  arrange(PULocationID) %>%
+  show_query()
+```
+
+
+```{r}
+DBI::dbGetQuery(
+  con,
+  "EXPLAIN SELECT
+    PULocationID,
+    COUNT(*) AS n,
+    AVG(passenger_count) AS avg_passenger,
+    AVG(trip_distance) AS avg_dist
+  FROM taxi_full
+  GROUP BY PULocationID
+  ORDER BY PULocationID"
+)
+```
+
+
+
+

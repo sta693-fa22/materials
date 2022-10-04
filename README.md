@@ -36,11 +36,16 @@ with MapReduce](http://lintool.github.io/MapReduceAlgorithms/ed1n.html) - Chapte
 
 * sparklyr [tuning](https://spark.rstudio.com/guides/model_tuning.html)
 
+
+### Week 6 - DuckDB
+
+* duckdb - [R API](https://duckdb.org/docs/api/r)
+
+* duckdb - [SQL API](https://duckdb.org/docs/sql/introduction)
+
+* [duckdb + arrow](https://duckdb.org/2021/12/03/duck-arrow.html)
+
 ## TODO
-
-### Week n+1 DuckDB
-
-* 
 
 ### Week n+2 - NoSQL
 
