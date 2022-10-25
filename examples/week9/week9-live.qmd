@@ -1,0 +1,33 @@
+---
+title: "MongoDB - Live session"
+format: 
+  html:
+    self-contained: true
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+```
+
+## Launch server
+
+```{bash}
+mongod --config /opt/homebrew/etc/mongod.conf --fork
+```
+
+## Setup data
+
+```{r}
+f1 = jsonlite::read_json(
+  "f1.json", 
+  simplifyVector = TRUE,
+  simplifyDataFrame = FALSE
+)
+
+races = f1$MRData$RaceTable$Races |>
+  tibble(races=_) |>
+  unnest_wider(races)
+```
+
+
+## Connect
