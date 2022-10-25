@@ -1,0 +1,349 @@
+---
+title: "MongoDB"
+format: 
+  html:
+    self-contained: true
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+```
+
+## Setup mongodb
+
+See platform specific details [here](https://www.mongodb.com/docs/manual/installation/#mongodb-installation-tutorials).
+
+### Install on Mac (via homebrew)
+
+```bash
+brew tap mongodb/brew
+brew update
+brew install mongodb-community
+```
+
+### Starting a server
+
+The daemon `mongod` is designed to be run as a standalone server (or cluster) - more than we really want to deal with here so we'll just be launching a local process which we can connect to and play around with.
+
+```{bash}
+mongod --config /opt/homebrew/etc/mongod.conf --fork
+```
+
+The contents of the config file are:
+
+```yaml
+systemLog:
+  destination: file
+  path: /opt/homebrew/var/log/mongodb/mongo.log
+  logAppend: true
+storage:
+  dbPath: /opt/homebrew/var/mongodb
+net:
+  bindIp: 127.0.0.1, ::1
+  ipv6: true
+```
+
+## mongolite
+
+### Data
+
+The following are the 2021 Formula 1 race results from the [Ergast])(http://ergast.com/mrd/) API.
+
+```{r}
+f1 = jsonlite::read_json(
+  "f1.json", 
+  simplifyVector = TRUE,
+  simplifyDataFrame = FALSE
+)
+races = f1$MRData$RaceTable$Races |>
+  tibble(races=_) |>
+  unnest_wider(races)
+```
+
+```{r}
+races
+```
+
+
+### Connecting
+
+```{r}
+( test = mongolite::mongo(
+    collection = "test", 
+    db = "test",
+    url="mongodb://localhost"
+) )
+```
+
+```{r include=FALSE}
+test$drop()
+```
+
+### Server info
+
+```{r}
+test$info()
+```
+
+### Importing Data
+
+Here we will add the F1 race data (1 document / race) into the test collection - the insert method wants either a data frame (1 document / row), a named list (1 document / list), or a character vector of json.
+
+```{r}
+test$insert(races)
+```
+
+To see the data in the database,
+
+```{r}
+test$count("{}")
+
+test$find("{}") |> as_tibble()
+```
+
+
+### Basic Queries
+
+MongoDB uses JSON based syntax for queries, in the previous section we used `{}` which is the empty query which selects all documents.
+
+Some basic filtering:
+```{r}
+test$find('{"raceName": "Bahrain Grand Prix"}') |> as_tibble()
+
+test$find('{"raceName": {"$in": ["Spanish Grand Prix","Bahrain Grand Prix"]}}') |> as_tibble()
+
+test$find('{"round": {"$lt": 5}}') |> as_tibble()
+
+test$find('{"$or": [{"round": {"$lt": 5}}, {"round": {"$gt": 18}}]}') |> as_tibble()
+```
+
+See [query operators](https://www.mongodb.com/docs/manual/reference/operator/query/#std-label-query-selectors) for a more complete list.
+
+
+### Nested Queries
+
+The following both appear to be reasonable syntax for selecting the Bahrain Grand Prix - however only the 2nd works. This is because the first fails as the entire sub-document needs to match in this case not just individual entries. Using the `.` syntax allows for querying on nested fields.
+
+```{r}
+test$find('{"Circuit": {"circuitId": "bahrain"}}') |> as_tibble()
+test$find('{"Circuit.circuitId": "bahrain"}') |> as_tibble()
+```
+
+This can be extended to accommodate further nesting,
+
+```{r}
+test$find('{"Circuit.Location.country": "Bahrain"}') |> as_tibble()
+```
+
+Attempting to filter on nested keys will not work, `driverId` is contained within `Results` > `Driver`.
+
+```{r}
+test$find('{"driverId": "hamilton"}') |> as_tibble()
+```
+
+#### Queries on arrays
+
+Within the f1 race results we have the `Results` key which contains an array of driver results, similar syntax can be used to filter on values within this array.
+
+In order to get the results of the races where Lewis Hamilton finished in 1st place we can use `.0` to select via the index (0 based) and then finish with filters on `Driver`,
+```{r}
+test$find('{"Results.0.Driver.driverId": "hamilton"}') |> as_tibble()
+```
+
+If we wanted to filter across all array elements we can do that directly,
+
+```{r}
+test$find('{"Results.Driver.driverId": "hamilton"}') |> as_tibble()
+```
+
+### Filtering fields (select)
+
+The `mongo` function takes a 2nd argument called `fields` which lets you specify which document fields should be returned from the query.
+
+```{r}
+test$find('{"round": {"$lt": 5}}', fields = '{"round": true, "raceName": true}') |> as_tibble()
+```
+
+The `_id` column is a unique identifier used by MongoDB to keep track of each unique document (think primary key from SQL databases).
+
+Fields may also be selected from subdocuments via `.`, the returned structure will still be nested but this can be flattened.
+
+```{r}
+test$find(
+  '{"round": {"$lt": 5}}', 
+  '{"round": true, "raceName": true, "Circuit.Location.locality": true}'
+) |>
+  mutate(location = unlist(Circuit)) |> 
+  as_tibble()
+```
+
+### Sorting 
+
+Document order from a `find()` can be reordered using the `sort` argument - arugment is a json string with the field names and 1 for asecending order and -1 for descending.
+
+```{r}
+test$find(
+  '{"round": {"$lt": 5}}', 
+  sort = '{"round": -1}'
+) |> as_tibble()
+
+test$find(
+  '{}',
+  fields = '{"round": true, "raceName": true, "_id": false}',
+  sort = '{"raceName": 1}'
+) |> as_tibble()
+```
+
+### Indexes
+
+MongoDB supports the creation of indexes on one or more fields which results in presorting of that/those field(s). This can result in faster find performance.
+
+```{r}
+test$index(add = '{"raceName": 1}')
+test$index(add = '{"round": -1}')
+test$index(add = '{"round": 1, "raceName": 1}')
+```
+
+Indexes can be removed via their name,
+
+```{r}
+test$index(remove = 'round_-1')
+```
+
+
+### Removing documents
+
+The `remove()` method can be used to drop documents from the collection - it uses syntax identical to the `find()` method for filtering. Similarly, the `drop()` method removes all documents.
+
+Careful with both of these as they cannot be undone.
+
+
+### Updating & Calculation
+
+To make life easier a slightly simpler collection,
+
+```{r}
+exams = mongolite::mongo("students")
+exams$drop()
+exams$insert(
+  c('{ "student" : "Alice", "age": 12, "grades" : [ 95,  92,  90] }',
+    '{ "student" : "Bob",   "age": 11, "grades" : [ 98,  87, 102] }',
+    '{ "student" : "Carol",            "grades" : [ 95, 110, 100] }',
+    '{ "student" : "Dave",             "grades" : [ 90, 101, 103] }')
+)
+```
+
+```{r}
+exams$find("{}") |> as_tibble()
+```
+
+#### Basic updates
+
+An update is composed of a query and then a call to the `$set` operator,
+
+```{r}
+exams$update('{"student": "Dave"}', '{"$set": {"age": 12}}')
+exams$find() |> as_tibble()
+```
+
+This can also be used to add new fields,
+
+```{r}
+# Create the has_age field
+exams$update('{}', '{"$set": {"has_age": false}}')
+exams$find() |> as_tibble()
+```
+
+By default an update will only change the first matching document, use `multiple = TRUE` to change all matching documents.
+
+```{r}
+# Create the has_age field
+exams$update('{}', '{"$set": {"has_age": false}}', multiple = TRUE)
+exams$find() |> as_tibble()
+```
+
+```{r}
+# Set has_age to true if age > 0
+exams$update('{"age": {"$gte": 0}}', '{"$set": {"has_age": true}}', multiple = TRUE)
+exams$find() |> as_tibble()
+```
+
+#### Upserts
+
+In cases where no matching documents are found then the update will do nothing unless `upsert = TRUE` is used, in which case a new document will be inserted.
+
+```{r}
+exams$update('{"student": "Erica"}', '{"$set": {"age": 11}}')
+exams$find() |> as_tibble()
+```
+
+```{r}
+exams$update('{"student": "Erica"}', '{"$set": {"age": 11, "grades": [99,99]}}', upsert = TRUE)
+exams$find() |> as_tibble()
+```
+
+#### Array filters
+
+```{r}
+exams$find() %>%
+  unnest_longer(grades)
+```
+
+```{r}
+exams$update(
+  query = '{"grades": {"$exists": true}}', 
+  update = '{"$set": {"grades.$[x]": 100}}', 
+  filters = '[{"x": {"$gte":100}}]', 
+  multiple = TRUE
+)
+```
+
+```{r}
+exams$find() |>
+  unnest_longer(grades) |> 
+  as_tibble()
+```
+
+
+#### Aggregation
+
+This is the MongoDB equivalent of group_by and summarize for dplyr and the the related operations in SQL. Called via the `aggregate()` method - the primary argument is a "pipeline" which is a collection of aggregation operations (see [here](https://www.mongodb.com/docs/manual/reference/operator/aggregation-pipeline/)).
+
+```{r}
+exams$aggregate(
+  '[{"$project": 
+      { "_id": "$student", 
+        "age": "$age", 
+        "avg_grade": {"$avg": "$grades"}, 
+        "n_grades": {"$size": "$grades"}
+      }
+   }]'
+) |> as_tibble()
+```
+
+
+```{r}
+exams$aggregate(
+  '[{
+    "$project": 
+    { "_id": "$student", 
+      "age": "$age", 
+      "avg_grade": {"$avg": "$grades"}, 
+      "n_grades": {"$size": "$grades"}
+    }
+   },{
+    "$group":
+    { "_id": "$age",
+      "age_avg_grade": {"$avg": "$avg_grade"}
+    }
+   }]'
+) |> as_tibble()
+```
+
+
+### Shutting down
+
+```{r error=TRUE}
+admin = mongolite::mongo(db="admin")
+admin$run('{"shutdown": 1}')
+```
