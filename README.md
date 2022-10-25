@@ -47,12 +47,17 @@ with MapReduce](http://lintool.github.io/MapReduceAlgorithms/ed1n.html) - Chapte
 
 * [duckdb + parquet](https://duckdb.org/2021/06/25/querying-parquet.html)
 
-## TODO
+### Week 7 - Fall Break
 
-### Week n+2 - NoSQL
+### Week 8 - Canceled
 
-* 
+### Week 9 - NoSQL
 
+* mongolite - [User manual](https://jeroen.github.io/mongolite/)
+
+* mongodb - [query](https://www.mongodb.com/docs/manual/tutorial/query-documents/)
+
+* mongodb - [sql comparison](https://www.mongodb.com/docs/manual/reference/sql-comparison/)
 
 ### Potential later topics (to be scheduled)
 
